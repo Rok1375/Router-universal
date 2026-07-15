@@ -1,0 +1,16 @@
+{
+  "id": "vendor.capability-name",
+  "name": "Capability Name",
+  "version": "1.0.0",
+  "kind": "agent",
+  "description": "Describe the executable outcome and boundaries.",
+  "tags": ["domain"],
+  "intents": ["build-artifact"],
+  "permissions": ["filesystem:read"],
+  "trustLevel": "untrusted",
+  "endpoint": { "transport": "http", "url": "http://127.0.0.1:9000/execute", "timeoutMs": 120000 },
+  "enabled": false,
+  "priority": 0,
+  "costHint": "medium",
+  "metadata": {}
+}

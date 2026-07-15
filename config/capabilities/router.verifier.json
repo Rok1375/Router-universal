@@ -1,0 +1,16 @@
+{
+  "id": "router.verifier",
+  "name": "Evidence Verifier",
+  "version": "1.0.0",
+  "kind": "tool",
+  "description": "Reviews execution evidence against explicit acceptance criteria.",
+  "tags": ["verification", "review", "quality"],
+  "intents": ["review-work"],
+  "permissions": ["filesystem:read"],
+  "trustLevel": "local",
+  "endpoint": { "transport": "in-memory" },
+  "enabled": true,
+  "priority": 3,
+  "costHint": "low",
+  "metadata": { "builtIn": true }
+}

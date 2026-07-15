@@ -1,0 +1,16 @@
+{
+  "id": "router.echo",
+  "name": "Router Echo",
+  "version": "1.0.0",
+  "kind": "tool",
+  "description": "Explains, inspects, and demonstrates routed tasks without changing files.",
+  "tags": ["general", "orchestration", "inspection"],
+  "intents": ["general-assistance", "understand-subject"],
+  "permissions": ["filesystem:read"],
+  "trustLevel": "local",
+  "endpoint": { "transport": "in-memory" },
+  "enabled": true,
+  "priority": 2,
+  "costHint": "low",
+  "metadata": { "builtIn": true }
+}

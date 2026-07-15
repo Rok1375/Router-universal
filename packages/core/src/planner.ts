@@ -4,11 +4,16 @@ import type {
   CostHint,
   ExecutionPlan,
   ExecutionStep,
+  Permission,
   RouteSelection,
   TaskUnderstanding,
 } from "../../contracts/src/index.js";
 
 const COST_RANK: Record<CostHint, number> = { low: 0, medium: 1, high: 2 };
+
+function unique<T>(values: T[]): T[] {
+  return [...new Set(values)];
+}
 
 export class RoutePlanner {
   build(
@@ -25,15 +30,21 @@ export class RoutePlanner {
       if (!manifest) continue;
       const previous = steps.at(-1);
       const isVerifier = manifest.tags.includes("verification") || manifest.intents.includes("review-work");
+      const taskPermissions: Permission[] = isVerifier ? [] : understanding.requiredPermissions;
       steps.push({
         id: `step-${index + 1}-${capabilityId.replace(/[^a-z0-9-]/gi, "-")}`,
         title: `${isVerifier ? "Verify with" : "Execute with"} ${manifest.name}`,
         capabilityId,
         input: { intent: understanding.intent, summary: understanding.summary },
         dependsOn: previous ? [previous.id] : [],
-        requiredPermissions: manifest.permissions,
+        requiredPermissions: unique([...manifest.permissions, ...taskPermissions]),
         verification: isVerifier ? understanding.acceptanceCriteria : [],
       });
+    }
+
+    if (understanding.writeIntent && steps.length > 0 && !steps.some((step) => step.verification.length > 0)) {
+      const finalStep = steps.at(-1);
+      if (finalStep) finalStep.verification = understanding.acceptanceCriteria;
     }
 
     const highestCost = manifests

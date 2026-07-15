@@ -1,0 +1,16 @@
+{
+  "id": "example.hello-http",
+  "name": "Hello HTTP Agent",
+  "version": "1.0.0",
+  "kind": "agent",
+  "description": "Example local HTTP capability used to certify the adapter contract.",
+  "tags": ["example", "general"],
+  "intents": ["general-assistance"],
+  "permissions": ["network:access"],
+  "trustLevel": "local",
+  "endpoint": { "transport": "http", "url": "http://127.0.0.1:4320/execute", "timeoutMs": 10000 },
+  "enabled": false,
+  "priority": -10,
+  "costHint": "low",
+  "metadata": { "start": "npm run example:hello-agent" }
+}
