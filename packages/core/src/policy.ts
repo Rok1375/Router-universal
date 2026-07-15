@@ -82,6 +82,11 @@ export class PermissionPolicy {
       )
       .map((decision) => `${decision.capabilityId}:${decision.permission}`);
 
-    return { allowed: denied.length === 0 && pendingApprovals.length === 0, decisions, pendingApprovals, denied };
+    return {
+      allowed: denied.length === 0 && pendingApprovals.length === 0,
+      decisions,
+      pendingApprovals,
+      denied,
+    };
   }
 }

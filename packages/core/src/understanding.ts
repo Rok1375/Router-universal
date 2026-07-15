@@ -8,7 +8,8 @@ export interface TaskAnalyzer {
 const DOMAIN_PATTERNS: Record<string, RegExp> = {
   frontend: /\b(react|next\.?js|vite|frontend|ui|css|tailwind|component|webgl|three\.?js)\b/i,
   backend: /\b(api|backend|server|database|sql|node|python|service)\b/i,
-  coding: /\b(code|project|repository|repo|implement|debug|test|build|compile|typescript|javascript)\b/i,
+  coding:
+    /\b(code|project|repository|repo|implement|debug|test|build|compile|typescript|javascript)\b/i,
   browser: /\b(browser|website|page|chrome|playwright|navigate|open)\b/i,
   devops: /\b(deploy|docker|kubernetes|ci|cd|pipeline|cloud|server)\b/i,
   security: /\b(auth|security|secret|credential|permission|vulnerability|token)\b/i,
@@ -22,8 +23,8 @@ function unique<T>(values: T[]): T[] {
 
 function inferIntent(prompt: string): string {
   if (/\b(debug|fix|repair|error|failing|broken)\b/i.test(prompt)) return "debug-software";
-  if (/\b(review|audit|double.?check|verify|inspect)\b/i.test(prompt)) return "review-work";
   if (/\b(create|build|implement|scaffold|generate|clone)\b/i.test(prompt)) return "build-artifact";
+  if (/\b(review|audit|double.?check|verify|inspect)\b/i.test(prompt)) return "review-work";
   if (/\b(deploy|publish|release|push)\b/i.test(prompt)) return "publish-artifact";
   if (/\b(explain|understand|summarize|research)\b/i.test(prompt)) return "understand-subject";
   return "general-assistance";
@@ -36,9 +37,10 @@ export class RuleBasedTaskAnalyzer implements TaskAnalyzer {
       .filter(([, pattern]) => pattern.test(prompt))
       .map(([domain]) => domain);
     const intent = inferIntent(prompt);
-    const writeIntent = /\b(create|build|write|edit|update|fix|install|clone|commit|push|delete|remove)\b/i.test(
-      prompt,
-    );
+    const writeIntent =
+      /\b(create|build|write|edit|update|fix|install|clone|commit|push|delete|remove)\b/i.test(
+        prompt,
+      );
     const permissions: Permission[] = ["filesystem:read"];
     if (writeIntent) permissions.push("filesystem:write");
     if (/\b(run|install|build|test|compile|open|start|launch|clone|git)\b/i.test(prompt)) {
@@ -57,8 +59,10 @@ export class RuleBasedTaskAnalyzer implements TaskAnalyzer {
     const risk: string[] = [];
     if (permissions.includes("destructive")) risk.push("destructive-action");
     if (permissions.includes("secrets:read")) risk.push("secret-access");
-    if (/\b(deploy|publish|production|migration|payment|auth)\b/i.test(prompt)) risk.push("high-impact");
-    if (/\b(sudo|administrator|full permission|root)\b/i.test(prompt)) risk.push("elevated-privilege");
+    if (/\b(deploy|publish|production|migration|payment|auth)\b/i.test(prompt))
+      risk.push("high-impact");
+    if (/\b(sudo|administrator|full permission|root)\b/i.test(prompt))
+      risk.push("elevated-privilege");
 
     const connectors = (prompt.match(/\b(and then|then|after that|once|also)\b/gi) ?? []).length;
     const complexity =
@@ -71,19 +75,26 @@ export class RuleBasedTaskAnalyzer implements TaskAnalyzer {
             : "standard";
 
     const acceptanceCriteria = ["The requested outcome is produced without violating constraints."];
-    if (writeIntent) acceptanceCriteria.push("All intended file changes are explicit and reviewable.");
+    if (writeIntent)
+      acceptanceCriteria.push("All intended file changes are explicit and reviewable.");
     if (permissions.includes("process:run")) {
       acceptanceCriteria.push("Relevant commands, tests, or runtime checks complete successfully.");
     }
-    acceptanceCriteria.push(...request.constraints.map((constraint) => `Constraint satisfied: ${constraint}`));
+    acceptanceCriteria.push(
+      ...request.constraints.map((constraint) => `Constraint satisfied: ${constraint}`),
+    );
 
     const ambiguities: string[] = [];
     if (/\b(this|that|whatever|something)\b/i.test(prompt) && request.context.length === 0) {
       ambiguities.push("The request references context that may not be attached.");
     }
-    if (intent === "general-assistance") ambiguities.push("No specialized intent was confidently detected.");
+    if (intent === "general-assistance")
+      ambiguities.push("No specialized intent was confidently detected.");
 
-    const confidence = Math.min(0.92, 0.58 + domains.length * 0.04 + (intent !== "general-assistance" ? 0.14 : 0));
+    const confidence = Math.min(
+      0.92,
+      0.58 + domains.length * 0.04 + (intent !== "general-assistance" ? 0.14 : 0),
+    );
 
     return {
       taskId: randomUUID(),

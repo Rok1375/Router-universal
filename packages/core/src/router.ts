@@ -176,7 +176,11 @@ export class UniversalRouter {
     for (const step of plan.steps) {
       const manifest = this.options.registry.get(step.capabilityId);
       if (!manifest) continue;
-      const evaluation = this.options.policy.evaluate(manifest, step.requiredPermissions, approvals);
+      const evaluation = this.options.policy.evaluate(
+        manifest,
+        step.requiredPermissions,
+        approvals,
+      );
       policy[step.id] = evaluation;
       for (const decision of evaluation.decisions) {
         this.options.events.emit({

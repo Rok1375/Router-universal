@@ -26,4 +26,6 @@ const server = createServer((request, response) => {
   });
 });
 
-server.listen(4320, "127.0.0.1", () => console.log("Hello Agent listening on http://127.0.0.1:4320"));
+server.listen(4320, "127.0.0.1", () =>
+  console.log("Hello Agent listening on http://127.0.0.1:4320"),
+);

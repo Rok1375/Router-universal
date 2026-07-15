@@ -15,5 +15,11 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "examples/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "apps/**/*.ts",
+    "packages/**/*.ts",
+    "examples/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ]
 }

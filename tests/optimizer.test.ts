@@ -16,6 +16,8 @@ describe("ContextOptimizer", () => {
     const understanding = await new RuleBasedTaskAnalyzer().analyze(request);
     const result = new ContextOptimizer().optimize(request, understanding, 50);
     expect(result.included.map((item) => item.id)).toEqual(["a"]);
-    expect(result.excluded.map((item) => item.reason)).toEqual(expect.arrayContaining(["duplicate", "token-budget"]));
+    expect(result.excluded.map((item) => item.reason)).toEqual(
+      expect.arrayContaining(["duplicate", "token-budget"]),
+    );
   });
 });

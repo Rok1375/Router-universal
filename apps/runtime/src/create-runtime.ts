@@ -6,11 +6,11 @@ import {
   FileCheckpointStore,
   FileImprovementStore,
   ImprovementProposer,
+  type PermissionMode,
   PermissionPolicy,
   RouterEventBus,
   RuleBasedTaskAnalyzer,
   UniversalRouter,
-  type PermissionMode,
 } from "../../../packages/core/src/index.js";
 import {
   AdapterRegistry,
@@ -72,7 +72,9 @@ export async function createRuntime(options: RuntimeOptions = {}) {
   const capabilityDirectory = resolve(
     options.capabilityDirectory ?? process.env.NOVA_CAPABILITY_DIR ?? "./config/capabilities",
   );
-  const stateDirectory = resolve(options.stateDirectory ?? process.env.NOVA_STATE_DIR ?? "./.nova/state");
+  const stateDirectory = resolve(
+    options.stateDirectory ?? process.env.NOVA_STATE_DIR ?? "./.nova/state",
+  );
   const discovery = await registry.discover(capabilityDirectory);
 
   if (!registry.get(ECHO_MANIFEST.id)) registry.register(ECHO_MANIFEST);

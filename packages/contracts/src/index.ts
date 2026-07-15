@@ -53,6 +53,7 @@ export type TaskUnderstanding = z.infer<typeof TaskUnderstandingSchema>;
 export const CapabilityKindSchema = z.enum(["agent", "skill", "mcp", "plugin", "tool"]);
 export const TrustLevelSchema = z.enum(["untrusted", "community", "verified", "local"]);
 export const CostHintSchema = z.enum(["low", "medium", "high"]);
+export type CostHint = z.infer<typeof CostHintSchema>;
 
 export const CapabilityEndpointSchema = z.discriminatedUnion("transport", [
   z.object({ transport: z.literal("in-memory") }),
@@ -186,6 +187,7 @@ export type StepResult = z.infer<typeof StepResultSchema>;
 export const TaskRunSchema = z.object({
   id: z.string().uuid(),
   taskId: z.string().uuid(),
+  requestFingerprint: z.string().length(64),
   requestSummary: z.string(),
   understanding: TaskUnderstandingSchema,
   plan: ExecutionPlanSchema,

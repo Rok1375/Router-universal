@@ -13,7 +13,10 @@ export class AdapterRegistry {
 
   register(adapter: CapabilityAdapter): void {
     if (adapter.manifest.id !== adapter.manifest.id.trim()) {
-      throw new RouterError("INVALID_ADAPTER", "Adapter manifest ID contains surrounding whitespace.");
+      throw new RouterError(
+        "INVALID_ADAPTER",
+        "Adapter manifest ID contains surrounding whitespace.",
+      );
     }
     this.adapters.set(adapter.manifest.id, adapter);
   }
@@ -41,7 +44,7 @@ function isLoopback(url: URL): boolean {
 export class HttpJsonAdapter implements CapabilityAdapter {
   constructor(
     readonly manifest: CapabilityManifest,
-    private readonly allowRemote = false,
+    allowRemote = false,
   ) {
     if (manifest.endpoint.transport !== "http") {
       throw new RouterError("INVALID_ADAPTER", "HTTP adapter requires an HTTP endpoint.");
@@ -53,7 +56,8 @@ export class HttpJsonAdapter implements CapabilityAdapter {
   }
 
   async execute(context: CapabilityExecutionContext): Promise<CapabilityExecutionResult> {
-    if (this.manifest.endpoint.transport !== "http") throw new RouterError("INVALID_ADAPTER", "Endpoint changed.");
+    if (this.manifest.endpoint.transport !== "http")
+      throw new RouterError("INVALID_ADAPTER", "Endpoint changed.");
     const timeout = AbortSignal.timeout(this.manifest.endpoint.timeoutMs);
     const response = await fetch(this.manifest.endpoint.url, {
       method: "POST",
@@ -62,7 +66,10 @@ export class HttpJsonAdapter implements CapabilityAdapter {
       signal: AbortSignal.any([context.signal, timeout]),
     });
     if (!response.ok) {
-      throw new RouterError("CAPABILITY_HTTP_ERROR", `Capability returned HTTP ${response.status}.`);
+      throw new RouterError(
+        "CAPABILITY_HTTP_ERROR",
+        `Capability returned HTTP ${response.status}.`,
+      );
     }
     return CapabilityExecutionResultSchema.parse(await response.json());
   }
@@ -70,7 +77,9 @@ export class HttpJsonAdapter implements CapabilityAdapter {
 
 function safeEnvironment(): NodeJS.ProcessEnv {
   const allowed = ["PATH", "Path", "SystemRoot", "HOME", "USERPROFILE", "TEMP", "TMP"];
-  return Object.fromEntries(allowed.flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])));
+  return Object.fromEntries(
+    allowed.flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])),
+  );
 }
 
 export class StdioJsonAdapter implements CapabilityAdapter {
@@ -81,7 +90,8 @@ export class StdioJsonAdapter implements CapabilityAdapter {
   }
 
   async execute(context: CapabilityExecutionContext): Promise<CapabilityExecutionResult> {
-    if (this.manifest.endpoint.transport !== "stdio") throw new RouterError("INVALID_ADAPTER", "Endpoint changed.");
+    if (this.manifest.endpoint.transport !== "stdio")
+      throw new RouterError("INVALID_ADAPTER", "Endpoint changed.");
     const endpoint = this.manifest.endpoint;
     return await new Promise((resolve, reject) => {
       const child = spawn(endpoint.command, endpoint.args, {
@@ -111,13 +121,23 @@ export class StdioJsonAdapter implements CapabilityAdapter {
         clearTimeout(timer);
         context.signal.removeEventListener("abort", cancel);
         if (code !== 0) {
-          reject(new RouterError("CAPABILITY_PROCESS_ERROR", stderr.trim() || `Process exited with ${code}.`));
+          reject(
+            new RouterError(
+              "CAPABILITY_PROCESS_ERROR",
+              stderr.trim() || `Process exited with ${code}.`,
+            ),
+          );
           return;
         }
         try {
           resolve(CapabilityExecutionResultSchema.parse(JSON.parse(stdout)));
         } catch (error) {
-          reject(new RouterError("CAPABILITY_PROTOCOL_ERROR", error instanceof Error ? error.message : String(error)));
+          reject(
+            new RouterError(
+              "CAPABILITY_PROTOCOL_ERROR",
+              error instanceof Error ? error.message : String(error),
+            ),
+          );
         }
       });
       child.stdin.end(JSON.stringify({ ...context, signal: undefined }));
@@ -129,7 +149,8 @@ export function createAdapterFromManifest(
   manifest: CapabilityManifest,
   options: { allowRemote?: boolean } = {},
 ): CapabilityAdapter | undefined {
-  if (manifest.endpoint.transport === "http") return new HttpJsonAdapter(manifest, options.allowRemote ?? false);
+  if (manifest.endpoint.transport === "http")
+    return new HttpJsonAdapter(manifest, options.allowRemote ?? false);
   if (manifest.endpoint.transport === "stdio") return new StdioJsonAdapter(manifest);
   if (manifest.endpoint.transport === "mcp") return undefined;
   return undefined;

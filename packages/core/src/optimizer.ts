@@ -23,7 +23,11 @@ function fingerprint(resource: ResourceRef): string {
   );
 }
 
-function relevance(resource: ResourceRef, request: TaskRequest, understanding: TaskUnderstanding): number {
+function relevance(
+  resource: ResourceRef,
+  request: TaskRequest,
+  understanding: TaskUnderstanding,
+): number {
   const haystack = `${resource.uri} ${resource.content ?? ""}`.toLowerCase();
   const terms = new Set(
     `${request.prompt} ${understanding.intent} ${understanding.domains.join(" ")}`
@@ -36,7 +40,11 @@ function relevance(resource: ResourceRef, request: TaskRequest, understanding: T
 }
 
 export class ContextOptimizer {
-  optimize(request: TaskRequest, understanding: TaskUnderstanding, budget: number): OptimizedContext {
+  optimize(
+    request: TaskRequest,
+    understanding: TaskUnderstanding,
+    budget: number,
+  ): OptimizedContext {
     const excluded: OptimizedContext["excluded"] = [];
     const seen = new Set<string>();
     const unique = request.context.filter((resource) => {
@@ -49,7 +57,9 @@ export class ContextOptimizer {
       return true;
     });
 
-    unique.sort((a, b) => relevance(b, request, understanding) - relevance(a, request, understanding));
+    unique.sort(
+      (a, b) => relevance(b, request, understanding) - relevance(a, request, understanding),
+    );
     const included: ResourceRef[] = [];
     let estimatedTokens = 0;
 

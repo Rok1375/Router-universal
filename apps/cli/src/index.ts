@@ -6,7 +6,28 @@ function valueAfter(prefix: string, args: string[]): string | undefined {
 }
 
 function taskText(args: string[]): string {
-  return args.filter((arg) => !arg.startsWith("--")).join(" ").trim();
+  return args
+    .filter((arg) => !arg.startsWith("--"))
+    .join(" ")
+    .trim();
+}
+
+function approvals(args: string[]): string[] {
+  return (valueAfter("--approve=", args) ?? "").split(",").filter(Boolean);
+}
+
+function createTask(prompt: string, args: string[]) {
+  const workspace = valueAfter("--workspace=", args);
+  return {
+    prompt,
+    ...(workspace ? { workspace } : {}),
+    context: [],
+    constraints: [],
+    preferredCapabilities: [],
+    deniedCapabilities: [],
+    dryRun: args.includes("--dry-run"),
+    metadata: { client: "cli" },
+  };
 }
 
 function print(value: unknown): void {
@@ -34,7 +55,9 @@ async function main(): Promise<void> {
   if (command === "validate") {
     const missingAdapters = runtime.registry
       .list({ enabledOnly: true })
-      .filter((manifest) => manifest.endpoint.transport !== "mcp" && !runtime.adapters.get(manifest.id))
+      .filter(
+        (manifest) => manifest.endpoint.transport !== "mcp" && !runtime.adapters.get(manifest.id),
+      )
       .map((manifest) => manifest.id);
     print({
       valid: runtime.discovery.issues.length === 0 && missingAdapters.length === 0,
@@ -47,24 +70,29 @@ async function main(): Promise<void> {
 
   if (command === "preview" || command === "run") {
     const prompt = taskText(args);
-    if (!prompt) throw new Error(`Usage: npm run nova -- ${command} "task" [--dry-run] [--approve=a,b]`);
-    const workspace = valueAfter("--workspace=", args);
-    const approvals = (valueAfter("--approve=", args) ?? "").split(",").filter(Boolean);
-    const task = {
-      prompt,
-      ...(workspace ? { workspace } : {}),
-      context: [],
-      constraints: [],
-      preferredCapabilities: [],
-      deniedCapabilities: [],
-      dryRun: args.includes("--dry-run"),
-      metadata: { client: "cli" },
-    };
-    print(command === "preview" ? await runtime.router.preview(task, approvals) : await runtime.router.run(task, approvals));
+    if (!prompt)
+      throw new Error(`Usage: npm run nova -- ${command} "task" [--dry-run] [--approve=a,b]`);
+    const task = createTask(prompt, args);
+    print(
+      command === "preview"
+        ? await runtime.router.preview(task, approvals(args))
+        : await runtime.router.run(task, approvals(args)),
+    );
     return;
   }
 
-  process.stdout.write(`Router Universal CLI\n\nCommands:\n  health\n  capabilities\n  validate\n  preview "task"\n  run "task" [--dry-run] [--approve=permission]\n`);
+  if (command === "resume") {
+    const [runId, ...taskArgs] = args;
+    const prompt = taskText(taskArgs);
+    if (!runId || !prompt)
+      throw new Error('Usage: npm run nova -- resume <run-id> "original task" [--approve=a,b]');
+    print(await runtime.router.resume(runId, createTask(prompt, taskArgs), approvals(taskArgs)));
+    return;
+  }
+
+  process.stdout.write(
+    `Router Universal CLI\n\nCommands:\n  health\n  capabilities\n  validate\n  preview "task"\n  run "task" [--dry-run] [--approve=permission]\n  resume <run-id> "original task" [--approve=permission]\n`,
+  );
 }
 
 main().catch((error) => {

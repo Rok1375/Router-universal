@@ -1,4 +1,5 @@
-import { readFile, readdir } from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   CapabilityManifest,
@@ -19,6 +20,28 @@ export interface DiscoveryReport {
   issues: DiscoveryIssue[];
 }
 
+const STOP_WORDS = new Set([
+  "and",
+  "the",
+  "for",
+  "with",
+  "from",
+  "this",
+  "that",
+  "into",
+  "your",
+  "you",
+  "to",
+  "of",
+  "in",
+  "on",
+  "is",
+  "it",
+  "as",
+  "or",
+  "be",
+  "by",
+]);
 const TRUST_SCORE: Record<CapabilityManifest["trustLevel"], number> = {
   untrusted: -8,
   community: 0,
@@ -31,7 +54,7 @@ function tokens(value: string): Set<string> {
     value
       .toLowerCase()
       .split(/[^a-z0-9.+#-]+/)
-      .filter((token) => token.length > 1),
+      .filter((token) => token.length > 1 && !STOP_WORDS.has(token)),
   );
 }
 
@@ -62,11 +85,14 @@ export class CapabilityRegistry {
     const report: DiscoveryReport = { loaded: [], skipped: [], issues: [] };
 
     const visit = async (current: string): Promise<void> => {
-      let entries;
+      let entries: Dirent[];
       try {
         entries = await readdir(current, { withFileTypes: true });
       } catch (error) {
-        report.issues.push({ path: current, message: error instanceof Error ? error.message : String(error) });
+        report.issues.push({
+          path: current,
+          message: error instanceof Error ? error.message : String(error),
+        });
         return;
       }
 
@@ -83,7 +109,10 @@ export class CapabilityRegistry {
             this.register(manifest);
             report.loaded.push(manifest.id);
           } catch (error) {
-            report.issues.push({ path, message: error instanceof Error ? error.message : String(error) });
+            report.issues.push({
+              path,
+              message: error instanceof Error ? error.message : String(error),
+            });
           }
         }
       }
@@ -95,7 +124,9 @@ export class CapabilityRegistry {
 
   select(request: TaskRequest, understanding: TaskUnderstanding): RouteSelection {
     const requestTokens = tokens(
-      [request.prompt, understanding.intent, ...understanding.domains, ...request.constraints].join(" "),
+      [request.prompt, understanding.intent, ...understanding.domains, ...request.constraints].join(
+        " ",
+      ),
     );
     const denied = new Set(request.deniedCapabilities);
     const preferred = new Set(request.preferredCapabilities);
@@ -107,15 +138,12 @@ export class CapabilityRegistry {
         );
         const matches = overlap(requestTokens, capabilityTokens);
         const intentMatch = manifest.intents.includes(understanding.intent) ? 12 : 0;
-        const domainMatches = manifest.tags.filter((tag) => understanding.domains.includes(tag)).length;
+        const domainMatches = manifest.tags.filter((tag) =>
+          understanding.domains.includes(tag),
+        ).length;
         const preference = preferred.has(manifest.id) ? 25 : 0;
-        const score =
-          matches.length * 3 +
-          intentMatch +
-          domainMatches * 5 +
-          preference +
-          manifest.priority +
-          TRUST_SCORE[manifest.trustLevel];
+        const relevance = matches.length * 3 + intentMatch + domainMatches * 5 + preference;
+        const score = relevance + manifest.priority + TRUST_SCORE[manifest.trustLevel];
         const reasons = [
           ...matches.slice(0, 6).map((match) => `keyword:${match}`),
           ...(intentMatch > 0 ? [`intent:${understanding.intent}`] : []),
@@ -123,18 +151,20 @@ export class CapabilityRegistry {
           ...(preference > 0 ? ["user-preferred"] : []),
           `trust:${manifest.trustLevel}`,
         ];
-        return { manifest, score, reasons };
+        return { manifest, score, relevance, reasons };
       })
-      .filter((entry) => entry.score > 0)
+      .filter((entry) => entry.relevance > 0)
       .sort((a, b) => b.score - a.score || a.manifest.id.localeCompare(b.manifest.id));
 
-    const limit = understanding.complexity === "complex" || understanding.complexity === "high-risk" ? 3 : 1;
+    const limit =
+      understanding.complexity === "complex" || understanding.complexity === "high-risk" ? 3 : 1;
     const selected = scored.slice(0, limit);
     const verification = understanding.writeIntent
       ? scored.find(
           (entry) =>
             !selected.includes(entry) &&
-            (entry.manifest.tags.includes("verification") || entry.manifest.intents.includes("review-work")),
+            (entry.manifest.tags.includes("verification") ||
+              entry.manifest.intents.includes("review-work")),
         )
       : undefined;
     if (verification) selected.push(verification);

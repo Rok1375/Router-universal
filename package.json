@@ -5,10 +5,13 @@
   "type": "module",
   "description": "Local-first, framework-agnostic orchestration router for AI assistants, agents, skills, MCP servers, plugins, and tools.",
   "license": "MIT",
-  "engines": { "node": ">=22.0.0" },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev:api": "tsx apps/api/src/server.ts",
     "dev:cli": "tsx apps/cli/src/index.ts",
+    "example:hello-agent": "tsx examples/hello-agent/src/index.ts",
     "nova": "tsx apps/cli/src/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

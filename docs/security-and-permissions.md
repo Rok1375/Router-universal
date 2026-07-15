@@ -15,11 +15,11 @@ change.
 
 ## Presets
 
-- **strict** — read is allowed; write, process, and network ask; secrets and destructive deny.
-- **balanced** — read allowed; write and process ask; network asks; secrets and destructive deny.
-- **developer** — read, write, and fixed process execution allowed; network asks; secrets and destructive deny.
+- **strict** - read is allowed; write, process, and network ask; secrets and destructive deny.
+- **balanced** - read and write are allowed; process and network ask; secrets and destructive deny.
+- **developer** - read, write, and fixed process execution are allowed; network asks; secrets and destructive deny.
 
-There is intentionally no “full access” preset. Advanced users can add narrowly scoped overrides per
+There is intentionally no "full access" preset. Advanced users can add narrowly scoped overrides per
 capability and permission.
 
 ## Threat controls

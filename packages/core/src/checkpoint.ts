@@ -28,13 +28,18 @@ export class FileCheckpointStore implements CheckpointStore {
     await mkdir(this.directory, { recursive: true });
     const target = join(this.directory, `${run.id}.json`);
     const temporary = `${target}.${process.pid}.tmp`;
-    await writeFile(temporary, `${JSON.stringify(run, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    await writeFile(temporary, `${JSON.stringify(run, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
     await rename(temporary, target);
   }
 
   async load(runId: string): Promise<TaskRun | undefined> {
     try {
-      return TaskRunSchema.parse(JSON.parse(await readFile(join(this.directory, `${runId}.json`), "utf8")));
+      return TaskRunSchema.parse(
+        JSON.parse(await readFile(join(this.directory, `${runId}.json`), "utf8")),
+      );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
