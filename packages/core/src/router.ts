@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   CapabilityAdapter,
+  ExecutionPlan,
   PermissionDecision,
   RouteSelection,
   TaskRequest,
@@ -18,10 +19,9 @@ import type { RouterEventBus } from "./events.js";
 import type { ImprovementProposer, ImprovementStore } from "./improvement.js";
 import type { OptimizedContext } from "./optimizer.js";
 import { ContextOptimizer } from "./optimizer.js";
-import type { PolicyEvaluation } from "./policy.js";
-import { PermissionPolicy } from "./policy.js";
 import { RoutePlanner } from "./planner.js";
-import { CapabilityRegistry } from "./registry.js";
+import type { PermissionPolicy, PolicyEvaluation } from "./policy.js";
+import type { CapabilityRegistry } from "./registry.js";
 import type { TaskAnalyzer } from "./understanding.js";
 
 export interface RoutePreview {
@@ -30,7 +30,7 @@ export interface RoutePreview {
   selection: RouteSelection;
   context: OptimizedContext;
   policy: Record<string, PolicyEvaluation>;
-  plan: TaskRun["plan"];
+  plan: ExecutionPlan;
 }
 
 export interface RouterOptions {
@@ -48,6 +48,27 @@ export interface RouterOptions {
 
 function unique(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function fingerprint(request: TaskRequest): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        prompt: request.prompt,
+        workspace: request.workspace ?? null,
+        constraints: request.constraints,
+        context: request.context.map((resource) => ({
+          id: resource.id,
+          uri: resource.uri,
+          hash:
+            resource.hash ??
+            createHash("sha256")
+              .update(resource.content ?? "")
+              .digest("hex"),
+        })),
+      }),
+    )
+    .digest("hex");
 }
 
 export class UniversalRouter {
@@ -68,14 +89,10 @@ export class UniversalRouter {
     const manifests = this.options.registry.list({ enabledOnly: true });
     const context = this.optimizer.optimize(request, understanding, this.maxContextTokens);
     const plan = this.planner.build(understanding, selection, manifests, this.maxContextTokens);
-    const policy: Record<string, PolicyEvaluation> = {};
-
-    for (const step of plan.steps) {
-      const manifest = this.options.registry.get(step.capabilityId);
-      if (!manifest) continue;
-      policy[step.id] = this.options.policy.evaluate(manifest, step.requiredPermissions, approvals);
-    }
-    plan.requiresApproval = Object.values(policy).some((evaluation) => evaluation.pendingApprovals.length > 0);
+    const policy = this.evaluatePolicy(plan, approvals, understanding.taskId);
+    plan.requiresApproval = Object.values(policy).some(
+      (evaluation) => evaluation.pendingApprovals.length > 0,
+    );
 
     this.options.events.emit({
       type: "route.created",
@@ -89,6 +106,19 @@ export class UniversalRouter {
       },
     });
 
+    for (const capabilityId of selection.selectedCapabilityIds) {
+      this.options.events.emit({
+        type: "capability.selected",
+        at: new Date().toISOString(),
+        taskId: understanding.taskId,
+        data: {
+          capabilityId,
+          score: selection.scores[capabilityId] ?? 0,
+          reasons: selection.reasons[capabilityId] ?? [],
+        },
+      });
+    }
+
     return { request, understanding, selection, context, policy, plan };
   }
 
@@ -98,42 +128,125 @@ export class UniversalRouter {
     const run: TaskRun = {
       id: randomUUID(),
       taskId: preview.understanding.taskId,
+      requestFingerprint: fingerprint(preview.request),
       requestSummary: preview.understanding.summary,
       understanding: preview.understanding,
       plan: preview.plan,
       status: "created",
       results: [],
-      pendingApprovals: unique(
-        Object.values(preview.policy).flatMap((evaluation) => evaluation.pendingApprovals),
-      ),
+      pendingApprovals: [],
       createdAt: now,
       updatedAt: now,
     };
+    return this.gateAndExecute(run, preview.request, preview.context, preview.policy);
+  }
 
-    const denied = unique(Object.values(preview.policy).flatMap((evaluation) => evaluation.denied));
+  async resume(runId: string, input: unknown, approvals: string[] = []): Promise<TaskRun> {
+    const run = await this.options.checkpoints.load(runId);
+    if (!run) {
+      throw new RouterError("RUN_NOT_FOUND", `Run ${runId} was not found.`);
+    }
+    if (run.status === "succeeded" || run.status === "simulated") {
+      return run;
+    }
+
+    const request = TaskRequestSchema.parse(input);
+    if (fingerprint(request) !== run.requestFingerprint) {
+      throw new RouterError(
+        "RESUME_INPUT_MISMATCH",
+        "The resume request does not match the original task fingerprint.",
+      );
+    }
+
+    const context = this.optimizer.optimize(request, run.understanding, run.plan.contextBudget);
+    const policy = this.evaluatePolicy(run.plan, approvals, run.taskId, run.id);
+    run.plan.requiresApproval = Object.values(policy).some(
+      (evaluation) => evaluation.pendingApprovals.length > 0,
+    );
+    return this.gateAndExecute(run, request, context, policy);
+  }
+
+  private evaluatePolicy(
+    plan: ExecutionPlan,
+    approvals: string[],
+    taskId: string,
+    runId?: string,
+  ): Record<string, PolicyEvaluation> {
+    const policy: Record<string, PolicyEvaluation> = {};
+    for (const step of plan.steps) {
+      const manifest = this.options.registry.get(step.capabilityId);
+      if (!manifest) continue;
+      const evaluation = this.options.policy.evaluate(manifest, step.requiredPermissions, approvals);
+      policy[step.id] = evaluation;
+      for (const decision of evaluation.decisions) {
+        this.options.events.emit({
+          type: "permission.decided",
+          at: new Date().toISOString(),
+          taskId,
+          ...(runId ? { runId } : {}),
+          data: {
+            capabilityId: decision.capabilityId,
+            permission: decision.permission,
+            outcome: decision.outcome,
+          },
+        });
+      }
+    }
+    return policy;
+  }
+
+  private async gateAndExecute(
+    run: TaskRun,
+    request: TaskRequest,
+    context: OptimizedContext,
+    policy: Record<string, PolicyEvaluation>,
+  ): Promise<TaskRun> {
+    const denied = unique(Object.values(policy).flatMap((evaluation) => evaluation.denied));
+    run.pendingApprovals = unique(
+      Object.values(policy).flatMap((evaluation) => evaluation.pendingApprovals),
+    );
+
     if (denied.length > 0) {
       run.status = "blocked";
       run.error = `Denied permissions: ${denied.join(", ")}`;
       return this.finish(run);
     }
-    if (preview.request.dryRun) {
+    if (request.dryRun) {
       run.status = "simulated";
+      delete run.error;
       return this.finish(run);
     }
     if (run.plan.steps.length === 0) {
       run.status = "blocked";
-      run.error = preview.selection.unmetRequirements.join(" ") || "No executable steps were planned.";
+      run.error = "No executable steps were planned.";
       return this.finish(run);
     }
     if (run.pendingApprovals.length > 0) {
       run.status = "awaiting_approval";
+      delete run.error;
       return this.finish(run);
     }
 
+    delete run.error;
+    return this.execute(run, request, context);
+  }
+
+  private async execute(
+    run: TaskRun,
+    request: TaskRequest,
+    context: OptimizedContext,
+  ): Promise<TaskRun> {
     run.status = "running";
     await this.save(run);
 
+    const completedStepIds = new Set(
+      run.results
+        .filter((entry) => entry.result.status === "succeeded")
+        .map((entry) => entry.stepId),
+    );
+
     for (const step of run.plan.steps) {
+      if (completedStepIds.has(step.id)) continue;
       const adapter = this.options.adapters.get(step.capabilityId);
       if (!adapter) {
         run.status = "failed";
@@ -141,8 +254,11 @@ export class UniversalRouter {
         return this.finish(run);
       }
 
+      const previousAttempts = run.results.filter((entry) => entry.stepId === step.id).length;
       let completed = false;
-      for (let attempt = 1; attempt <= this.maxRetries + 1 && !completed; attempt += 1) {
+
+      for (let retry = 0; retry <= this.maxRetries && !completed; retry += 1) {
+        const attempt = previousAttempts + retry + 1;
         const startedAt = new Date().toISOString();
         this.options.events.emit({
           type: "step.started",
@@ -155,16 +271,20 @@ export class UniversalRouter {
         try {
           const controller = new AbortController();
           const raw = await adapter.execute({
-            task: preview.request,
-            understanding: preview.understanding,
-            plan: preview.plan,
+            task: request,
+            understanding: run.understanding,
+            plan: run.plan,
             step,
-            context: preview.context.included,
-            ...(preview.request.workspace ? { workspace: preview.request.workspace } : {}),
+            context: context.included,
+            ...(request.workspace ? { workspace: request.workspace } : {}),
             signal: controller.signal,
           });
           let result = CapabilityExecutionResultSchema.parse(raw);
-          if (result.status === "succeeded" && step.verification.length > 0 && result.evidence.length === 0) {
+          if (
+            result.status === "succeeded" &&
+            step.verification.length > 0 &&
+            result.evidence.length === 0
+          ) {
             result = {
               status: "failed",
               summary: "Capability reported success without required verification evidence.",
@@ -173,28 +293,38 @@ export class UniversalRouter {
               retryable: false,
             };
           }
+          const finishedAt = new Date().toISOString();
           run.results.push({
             stepId: step.id,
             capabilityId: step.capabilityId,
             attempt,
             startedAt,
-            finishedAt: new Date().toISOString(),
+            finishedAt,
             result,
           });
+          this.emitStepCompleted(
+            run,
+            step.id,
+            step.capabilityId,
+            startedAt,
+            finishedAt,
+            result.status,
+          );
           completed = result.status === "succeeded";
-          if (!completed && (!result.retryable || attempt > this.maxRetries)) {
+          if (!completed && (!result.retryable || retry >= this.maxRetries)) {
             run.status = result.status === "cancelled" ? "cancelled" : "failed";
             run.error = result.summary;
             return this.finish(run);
           }
         } catch (error) {
-          const retryable = attempt <= this.maxRetries;
+          const retryable = retry < this.maxRetries;
+          const finishedAt = new Date().toISOString();
           run.results.push({
             stepId: step.id,
             capabilityId: step.capabilityId,
             attempt,
             startedAt,
-            finishedAt: new Date().toISOString(),
+            finishedAt,
             result: {
               status: "failed",
               summary: errorMessage(error),
@@ -203,6 +333,7 @@ export class UniversalRouter {
               retryable,
             },
           });
+          this.emitStepCompleted(run, step.id, step.capabilityId, startedAt, finishedAt, "failed");
           if (!retryable) {
             run.status = "failed";
             run.error = errorMessage(error);
@@ -215,6 +346,28 @@ export class UniversalRouter {
 
     run.status = "succeeded";
     return this.finish(run);
+  }
+
+  private emitStepCompleted(
+    run: TaskRun,
+    stepId: string,
+    capabilityId: string,
+    startedAt: string,
+    finishedAt: string,
+    status: string,
+  ): void {
+    this.options.events.emit({
+      type: "step.completed",
+      at: finishedAt,
+      taskId: run.taskId,
+      runId: run.id,
+      data: {
+        stepId,
+        capabilityId,
+        status,
+        durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)),
+      },
+    });
   }
 
   private async save(run: TaskRun): Promise<void> {
